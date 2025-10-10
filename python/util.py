@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras import layers, losses, models, optimizers
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.models import Sequential
 import yfinance as yf
@@ -2619,3 +2620,166 @@ class LSTM_Model_MS_GT:
             pred_up=bot_pred_update,
         )
         plt.clf()
+
+
+class Transformer_Model_MS:
+    def __init__(
+        self,
+        tickerSymbol,
+        start,
+        end,
+        past_history=60,
+        forward_look=1,
+        train_test_split=0.8,
+        batch_size=32,
+        epochs=50,
+        depth=2,
+        d_model=64,
+        num_heads=4,
+        ff_dim=128,
+        dropout_rate=0.1,
+        use_learnable_pos_encoding=False,
+        tickerSymbolList=None,
+        sameTickerTestTrain=True,
+    ):
+        self.tickerSymbol = tickerSymbol
+        self.start = start
+        self.end = end
+        self.past_history = past_history
+        self.forward_look = forward_look
+        self.train_test_split = train_test_split
+        self.batch_size = batch_size
+        self.epochs = epochs
+        self.depth = depth
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.ff_dim = ff_dim
+        self.dropout_rate = dropout_rate
+        self.use_learnable_pos_encoding = use_learnable_pos_encoding
+        self.tickerSymbolList = tickerSymbolList
+        self.sameTickerTestTrain = sameTickerTestTrain
+
+        self.model = None
+        self.history = None
+        self.RMS_error_update = None
+
+        # Number of features: 1 for single ticker, else number of tickers
+        self.n_features = 1 if tickerSymbolList is None else len(tickerSymbolList)
+
+    def get_tick_values(self, ticker):
+        df = yf.download(ticker, start=self.start, end=self.end)
+        return df["Close"].values.astype(np.float32)
+
+    def prepare_test_train(self):
+        """Prepare training and testing data (multi-ticker compatible)"""
+        if self.tickerSymbolList is None:
+            dataset = np.expand_dims(self.get_tick_values(self.tickerSymbol), axis=-1)
+        else:
+            datasets = [self.get_tick_values(t) for t in self.tickerSymbolList]
+            dataset = np.stack(datasets, axis=-1)  # shape (T, n_features)
+
+        X, y = [], []
+        for i in range(len(dataset) - self.past_history - self.forward_look + 1):
+            X.append(dataset[i : i + self.past_history])
+            y.append(
+                dataset[
+                    i + self.past_history : i + self.past_history + self.forward_look, 0
+                ]
+            )
+        X, y = np.array(X), np.array(y)
+
+        # Normalize based on training data
+        split_idx = int(len(X) * self.train_test_split)
+        mean = X[:split_idx].mean(axis=0, keepdims=True)
+        std = X[:split_idx].std(axis=0, keepdims=True) + 1e-8
+        X = (X - mean) / std
+        y = (y - mean[:, 0, 0]) / std[:, 0, 0]  # normalize targets similarly
+
+        self.xtrain, self.xtest = X[:split_idx], X[split_idx:]
+        self.ytrain, self.ytest = y[:split_idx], y[split_idx:]
+
+    def positional_encoding(self, x):
+        """Fixed sinusoidal positional encoding"""
+        seq_len = tf.shape(x)[1]
+        d_model = tf.shape(x)[2]
+        pos = tf.cast(tf.range(seq_len)[:, tf.newaxis], tf.float32)
+        i = tf.cast(tf.range(d_model)[tf.newaxis, :], tf.float32)
+        angle_rates = 1 / tf.pow(10000.0, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
+        angle_rads = pos * angle_rates
+        sines = tf.sin(angle_rads[:, 0::2])
+        cosines = tf.cos(angle_rads[:, 1::2])
+        pos_encoding = tf.concat([sines, cosines], axis=-1)
+        return x + pos_encoding[tf.newaxis, ...]
+
+    def build_transformer(self):
+        """Build Transformer encoder"""
+        inputs = layers.Input(shape=(self.past_history, self.n_features))
+        x = layers.Dense(self.d_model)(inputs)
+
+        if self.use_learnable_pos_encoding:
+            pos_encoding = tf.Variable(
+                tf.random.normal([self.past_history, self.d_model]),
+                trainable=True,
+                name="pos_encoding",
+            )
+            x = x + pos_encoding[tf.newaxis, ...]
+        else:
+            x = self.positional_encoding(x)
+
+        for _ in range(self.depth):
+            attn_out = layers.MultiHeadAttention(
+                num_heads=self.num_heads, key_dim=self.d_model
+            )(x, x)
+            attn_out = layers.Dropout(self.dropout_rate)(attn_out)
+            x = layers.LayerNormalization(epsilon=1e-6)(x + attn_out)
+
+            ffn_out = layers.Dense(self.ff_dim, activation="relu")(x)
+            ffn_out = layers.Dense(self.d_model)(ffn_out)
+            x = layers.LayerNormalization(epsilon=1e-6)(x + ffn_out)
+
+        x = layers.GlobalAveragePooling1D()(x)
+        x = layers.Dense(64, activation="relu")(x)
+        outputs = layers.Dense(self.forward_look)(x)
+
+        model = models.Model(inputs, outputs)
+        model.compile(optimizer=optimizers.Adam(1e-4), loss="mse")
+        return model
+
+    def model_workflow(self):
+        """Train the transformer"""
+        self.prepare_test_train()
+        self.model = self.build_transformer()
+        self.history = self.model.fit(
+            self.xtrain,
+            self.ytrain,
+            validation_data=(self.xtest, self.ytest),
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            verbose=1,
+        )
+
+    def infer_values(self):
+        y_pred = self.model.predict(self.xtest)
+        self.RMS_error_update = np.sqrt(np.mean((self.ytest - y_pred) ** 2))
+        return y_pred
+
+    def plot_predictions(self, save_path="../images/Transformer_prediction.png"):
+        y_pred = self.model.predict(self.xtest)
+        y_true = np.array(self.ytest)
+
+        # Make sure both are 1D
+        y_pred = np.squeeze(y_pred)
+        y_true = np.squeeze(y_true)
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(y_true, label="True", linewidth=2)
+        plt.plot(y_pred, label="Predicted", linestyle="--")
+        plt.legend()
+        plt.title(
+            f"{self.tickerSymbol} Transformer Prediction (RMS={self.RMS_error_update:.4f})"
+        )
+        plt.xlabel("Time")
+        plt.ylabel("Normalized Price")
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close()
