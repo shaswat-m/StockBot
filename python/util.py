@@ -509,6 +509,8 @@ class LSTM_Model:
             self.pred_update_train = []
             self.usetest_train = self.xtrain.copy()
         for i in range(self.values):
+            # if i + self.past_history > len(self.usetest):
+            #     break
             self.y_pred = self.model.predict(
                 xtest[i, :, :].reshape(1, xtest.shape[1], xtest.shape[2])
             )[0][:]
@@ -605,7 +607,7 @@ class LSTM_Model:
                     )
                 ) ** 0.5 / self.batch_size
 
-    def plot_test_values(self):
+    def plot_test_values(self, suffix=""):
         """
         Plot predicted values against actual values
         """
@@ -638,7 +640,7 @@ class LSTM_Model:
             plt.xlabel("Days")
             plt.ylabel("Prediction difference")
             plt.savefig(
-                "../images/Difference_%d_%d_%d_%d_%s_%s.png"
+                "../images/Difference_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
@@ -646,11 +648,12 @@ class LSTM_Model:
                     self.forward_look,
                     self.ts,
                     int(self.custom_loss),
+                    suffix,
                 )
             )
             plt.clf()
             np.savez(
-                "../save_mat/store_%d_%d_%d_%d_%s_%s.png"
+                "../save_mat/store_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
@@ -658,6 +661,7 @@ class LSTM_Model:
                     self.forward_look,
                     self.ts,
                     int(self.custom_loss),
+                    suffix,
                 ),
                 y=self.yt[: self.values - 1, 0, 0],
                 pred=self.pred[1:, 0],
@@ -672,7 +676,7 @@ class LSTM_Model:
             plt.title("The relative RMS error is %f" % self.RMS_error)
             plt.legend()
             plt.savefig(
-                "../images/Stock_prediction_%d_%d_%d_%d_%s_%s.png"
+                "../images/Stock_prediction_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
@@ -680,6 +684,7 @@ class LSTM_Model:
                     self.forward_look,
                     self.ts,
                     int(self.custom_loss),
+                    suffix,
                 )
             )
             plt.clf()
@@ -690,7 +695,7 @@ class LSTM_Model:
             plt.xlabel("Days")
             plt.ylabel("Prediction difference")
             plt.savefig(
-                "../images/Difference_%d_%d_%d_%d_%s_%s.png"
+                "../images/Difference_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
@@ -698,6 +703,7 @@ class LSTM_Model:
                     self.forward_look,
                     self.ts,
                     int(self.custom_loss),
+                    suffix,
                 )
             )
             plt.clf()
@@ -759,14 +765,15 @@ class LSTM_Model:
         self.infer_values(self.xt, self.yt, self.ts)
         # self.arch_plot()
 
-    def full_workflow_and_plot(self, model=None):
+    def full_workflow_and_plot(self, model=None, suffix=""):
         """
         Workflow to carry out the entire process end-to-end
         :param model: Choose which model to use to plot inferred values
         :return:
         """
         self.full_workflow(model=model)
-        self.plot_test_values()
+
+        self.plot_test_values(suffix=suffix)
 
     def plot_bot_decision(self):
         """
@@ -2783,3 +2790,304 @@ class Transformer_Model_MS:
         plt.tight_layout()
         plt.savefig(save_path)
         plt.close()
+
+
+class AttentionLayer(tf.keras.layers.Layer):
+    """
+    Simple Bahdanau-style attention layer
+    """
+
+    def __init__(self, units=32):
+        super(AttentionLayer, self).__init__()
+        self.W1 = tf.keras.layers.Dense(units)
+        self.W2 = tf.keras.layers.Dense(units)
+        self.V = tf.keras.layers.Dense(1)
+
+    def call(self, hidden_states, query=None):
+        """
+        hidden_states: (batch_size, seq_len, hidden_dim)
+        query: (batch_size, hidden_dim) or None
+        """
+        if query is None:
+            query = tf.reduce_mean(hidden_states, axis=1)  # (batch_size, hidden_dim)
+        query = tf.expand_dims(query, 1)  # (batch_size, 1, hidden_dim)
+        score = tf.nn.tanh(self.W1(hidden_states) + self.W2(query))
+        attention_weights = tf.nn.softmax(self.V(score), axis=1)
+        context_vector = attention_weights * hidden_states
+        context_vector = tf.reduce_sum(
+            context_vector, axis=1
+        )  # (batch_size, hidden_dim)
+        return context_vector, attention_weights
+
+
+class Attention_LSTM_Model(LSTM_Model):
+    """
+    LSTM model with attention. Everything else is inherited from LSTM_Model.
+    """
+
+    def model_LSTM(self):
+        """
+        Replace original LSTM with LSTM + Attention
+        """
+        inputs = tf.keras.Input(shape=self.xtrain.shape[-2:])
+        x = inputs
+        # Stacked LSTM layers
+        for i in range(self.depth):
+            x = tf.keras.layers.LSTM(20, return_sequences=True)(x)
+        # Add final LSTM without return_sequences
+        x = tf.keras.layers.LSTM(20, return_sequences=True)(x)
+        # Attention layer
+        context, attn_weights = AttentionLayer(20)(x)
+        outputs = tf.keras.layers.Dense(self.forward_look)(context)
+        self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+        # Compile
+        if self.custom_loss:
+            self.model.compile(
+                optimizer="Adam", loss=self.custom_loss_def, metrics=["mse", "mae"]
+            )
+        else:
+            self.model.compile(optimizer="Adam", loss="mse", metrics=["mse", "mae"])
+
+        # Dataset prep and training
+        self.create_p_test_train()
+        self.hist = self.model.fit(
+            self.p_train,
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch,
+            validation_data=self.p_test,
+            validation_steps=self.validation_steps,
+            verbose=self.verbose,
+        )
+
+
+class MultiHeadAttention_LSTM_Model(LSTM_Model):
+    """
+    LSTM with Multi-Head Self-Attention
+    """
+
+    def model_LSTM(self):
+        """
+        Replace original LSTM with LSTM + Multi-Head Self-Attention
+        """
+        inputs = tf.keras.Input(shape=self.xtrain.shape[-2:])
+        x = inputs
+        # Stacked LSTM layers
+        for i in range(self.depth):
+            x = tf.keras.layers.LSTM(20, return_sequences=True)(x)
+        # Final LSTM layer
+        x = tf.keras.layers.LSTM(20, return_sequences=True)(x)
+
+        # Multi-Head Attention
+        # Use the LSTM outputs as query, key, value
+        attn_out = tf.keras.layers.MultiHeadAttention(num_heads=2, key_dim=20)(
+            x, x, x
+        )  # Self-attention
+        # Global average pooling over time
+        context = tf.keras.layers.GlobalAveragePooling1D()(attn_out)
+        outputs = tf.keras.layers.Dense(self.forward_look)(context)
+
+        self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+        # Compile
+        if self.custom_loss:
+            self.model.compile(
+                optimizer="Adam", loss=self.custom_loss_def, metrics=["mse", "mae"]
+            )
+        else:
+            self.model.compile(optimizer="Adam", loss="mse", metrics=["mse", "mae"])
+
+        # Dataset prep and training
+        self.create_p_test_train()
+        self.hist = self.model.fit(
+            self.p_train,
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch,
+            validation_data=self.p_test,
+            validation_steps=self.validation_steps,
+            verbose=self.verbose,
+        )
+
+
+class Transformer_Model(LSTM_Model):
+    """
+    Time Series Transformer model inheriting from LSTM_Model.
+    """
+
+    def model_LSTM(self):
+        inputs = tf.keras.Input(shape=self.xtrain.shape[-2:])
+        d_model = 64
+
+        # Linear projection
+        x = tf.keras.layers.Dense(d_model)(inputs)
+
+        # Learnable positional encoding
+        pos = tf.range(start=0, limit=self.past_history, delta=1)
+        pos_encoding = tf.keras.layers.Embedding(
+            input_dim=self.past_history, output_dim=d_model
+        )(pos)
+        pos_encoding = tf.expand_dims(pos_encoding, axis=0)
+        x = x + pos_encoding
+
+        # Transformer Encoder blocks
+        for _ in range(2):
+            attn = tf.keras.layers.MultiHeadAttention(num_heads=4, key_dim=d_model)(
+                x, x
+            )
+            x = tf.keras.layers.Add()([x, attn])
+            x = tf.keras.layers.LayerNormalization()(x)
+            ff = tf.keras.layers.Dense(128, activation="relu")(x)
+            ff = tf.keras.layers.Dense(d_model)(ff)
+            x = tf.keras.layers.Add()([x, ff])
+            x = tf.keras.layers.LayerNormalization()(x)
+
+        x = tf.keras.layers.GlobalAveragePooling1D()(x)
+        outputs = tf.keras.layers.Dense(self.forward_look)(x)
+
+        self.model = tf.keras.Model(
+            inputs=inputs, outputs=outputs, name="Transformer_Model"
+        )
+
+        # Compile and train
+        if self.custom_loss:
+            self.model.compile(
+                optimizer="Adam", loss=self.custom_loss_def, metrics=["mse", "mae"]
+            )
+        else:
+            self.model.compile(optimizer="Adam", loss="mse", metrics=["mse", "mae"])
+
+        self.create_p_test_train()
+        self.hist = self.model.fit(
+            self.p_train,
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch,
+            validation_data=self.p_test,
+            validation_steps=self.validation_steps,
+            verbose=self.verbose,
+        )
+
+
+class Informer_Model(LSTM_Model):
+    """
+    Informer-like transformer model (sparse attention, simplified for TensorFlow).
+    """
+
+    def model_LSTM(self):
+        inputs = tf.keras.Input(shape=self.xtrain.shape[-2:])
+        x = tf.keras.layers.Dense(64)(inputs)
+
+        for _ in range(2):
+            attn = tf.keras.layers.MultiHeadAttention(
+                num_heads=4, key_dim=64, dropout=0.1
+            )(x, x)
+            x = tf.keras.layers.Add()([x, attn])
+            x = tf.keras.layers.LayerNormalization()(x)
+            ff = tf.keras.layers.Dense(128, activation="gelu")(x)
+            ff = tf.keras.layers.Dense(64)(ff)
+            x = tf.keras.layers.Add()([x, ff])
+            x = tf.keras.layers.LayerNormalization()(x)
+
+        x = tf.keras.layers.GlobalAveragePooling1D()(x)
+        outputs = tf.keras.layers.Dense(self.forward_look)(x)
+
+        self.model = tf.keras.Model(
+            inputs=inputs, outputs=outputs, name="Informer_Model"
+        )
+
+        if self.custom_loss:
+            self.model.compile(
+                optimizer="Adam", loss=self.custom_loss_def, metrics=["mse", "mae"]
+            )
+        else:
+            self.model.compile(optimizer="Adam", loss="mse", metrics=["mse", "mae"])
+
+        self.create_p_test_train()
+        self.hist = self.model.fit(
+            self.p_train,
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch,
+            validation_data=self.p_test,
+            validation_steps=self.validation_steps,
+            verbose=self.verbose,
+        )
+
+
+class TFT_Model(LSTM_Model):
+    """
+    Temporal Fusion Transformer model
+    """
+
+    def model_LSTM(self):
+        inputs = tf.keras.Input(shape=self.xtrain.shape[-2:])
+
+        lstm_out = tf.keras.layers.LSTM(64, return_sequences=True)(inputs)
+        lstm_out = tf.keras.layers.LSTM(64, return_sequences=True)(lstm_out)
+
+        attn_out = tf.keras.layers.MultiHeadAttention(num_heads=4, key_dim=64)(
+            lstm_out, lstm_out
+        )
+        attn_out = tf.keras.layers.LayerNormalization()(attn_out)
+
+        # gating
+        gate = tf.keras.layers.Dense(64, activation="sigmoid")(attn_out)
+        gated = tf.keras.layers.Multiply()([gate, attn_out])
+        x = tf.keras.layers.Add()([lstm_out, gated])
+
+        x = tf.keras.layers.GlobalAveragePooling1D()(x)
+        outputs = tf.keras.layers.Dense(self.forward_look)(x)
+
+        self.model = tf.keras.Model(inputs=inputs, outputs=outputs, name="TFT_Model")
+
+        if self.custom_loss:
+            self.model.compile(
+                optimizer="Adam", loss=self.custom_loss_def, metrics=["mse", "mae"]
+            )
+        else:
+            self.model.compile(optimizer="Adam", loss="mse", metrics=["mse", "mae"])
+
+        self.create_p_test_train()
+        self.hist = self.model.fit(
+            self.p_train,
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch,
+            validation_data=self.p_test,
+            validation_steps=self.validation_steps,
+            verbose=self.verbose,
+        )
+
+
+class TCN_Model(LSTM_Model):
+    """
+    Temporal Convolutional Network model
+    """
+
+    def model_LSTM(self):
+        inputs = tf.keras.Input(shape=self.xtrain.shape[-2:])
+
+        x = tf.keras.layers.Conv1D(
+            64, kernel_size=3, padding="causal", activation="relu"
+        )(inputs)
+        x = tf.keras.layers.Conv1D(
+            64, kernel_size=3, padding="causal", activation="relu"
+        )(x)
+        x = tf.keras.layers.GlobalAveragePooling1D()(x)
+        outputs = tf.keras.layers.Dense(self.forward_look)(x)
+
+        self.model = tf.keras.Model(inputs=inputs, outputs=outputs, name="TCN_Model")
+
+        if self.custom_loss:
+            self.model.compile(
+                optimizer="Adam", loss=self.custom_loss_def, metrics=["mse", "mae"]
+            )
+        else:
+            self.model.compile(optimizer="Adam", loss="mse", metrics=["mse", "mae"])
+
+        self.create_p_test_train()
+        self.hist = self.model.fit(
+            self.p_train,
+            epochs=self.epochs,
+            steps_per_epoch=self.steps_per_epoch,
+            validation_data=self.p_test,
+            validation_steps=self.validation_steps,
+            verbose=self.verbose,
+        )
