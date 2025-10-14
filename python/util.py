@@ -775,7 +775,7 @@ class LSTM_Model:
 
         self.plot_test_values(suffix=suffix)
 
-    def plot_bot_decision(self):
+    def plot_bot_decision(self, suffix=""):
         """
         calculate investment growth from the inferred prediction value and plot the resulting growth
         """
@@ -813,7 +813,7 @@ class LSTM_Model:
         plt.ylabel("Percentage growth")
         plt.legend()
         plt.savefig(
-            "../images/Bot_prediction_%d_%d_%d_%d_%s_%s.png"
+            "../images/Bot_prediction_%d_%d_%d_%d_%s_%s%s.png"
             % (
                 self.depth,
                 int(self.naive),
@@ -821,10 +821,11 @@ class LSTM_Model:
                 self.forward_look,
                 self.ts,
                 int(self.custom_loss),
+                suffix,
             )
         )
         np.savez(
-            "../save_mat/bot_%d_%d_%d_%d_%s_%s.png"
+            "../save_mat/bot_%d_%d_%d_%d_%s_%s%s.png"
             % (
                 self.depth,
                 int(self.naive),
@@ -832,6 +833,7 @@ class LSTM_Model:
                 self.forward_look,
                 self.ts,
                 int(self.custom_loss),
+                suffix,
             ),
             ideal=bot_ideal,
             pred=bot_pred,
