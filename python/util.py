@@ -653,7 +653,7 @@ class LSTM_Model:
             )
             plt.clf()
             np.savez(
-                "../save_mat/store_%d_%d_%d_%d_%s_%s%s.png"
+                "../save_mat/store_%d_%d_%d_%d_%s_%s%s.npz"
                 % (
                     self.depth,
                     int(self.naive),
@@ -708,7 +708,7 @@ class LSTM_Model:
             )
             plt.clf()
             np.savez(
-                "../save_mat/store_%d_%d_%d_%d_%s_%s.png"
+                "../save_mat/store_%d_%d_%d_%d_%s_%s.npz"
                 % (
                     self.depth,
                     int(self.naive),
@@ -788,7 +788,9 @@ class LSTM_Model:
                 -1,
             )
         else:
-            ideal = self.yt[: self.values - 1]
+            ideal = self.yt[: self.values - 1].reshape(
+                -1,
+            )
             pred = np.asarray(self.pred[1:]).reshape(
                 -1,
             )
@@ -798,16 +800,27 @@ class LSTM_Model:
         control_ideal = get_control_vector(ideal)
         control_pred = get_control_vector(pred)
         control_pred_update = get_control_vector(pred_update)
-        bot_ideal = buy_and_sell_bot(ideal, control_ideal)
-        bot_pred = buy_and_sell_bot(ideal, control_pred)
-        bot_pred_update = buy_and_sell_bot(ideal, control_pred_update)
         plt.figure()
-        plt.plot(bot_ideal, label="Ideal case (%.2f)" % bot_ideal[-1])
-        plt.plot(bot_pred, label="From prediction (%.2f)" % bot_pred[-1])
-        plt.plot(
-            bot_pred_update,
-            label="From prediction (updated) (%.2f)" % bot_pred_update[-1],
-        )
+        try:
+            bot_ideal = buy_and_sell_bot(ideal, control_ideal)
+            plt.plot(bot_ideal, label="Ideal case (%.2f)" % bot_ideal[-1])
+        except:
+            pass
+        try:
+            bot_pred = buy_and_sell_bot(ideal, control_pred)
+            plt.plot(bot_pred, label="From prediction (%.2f)" % bot_pred[-1])
+            have_pred = True
+        except:
+            have_pred = False
+        try:
+            bot_pred_update = buy_and_sell_bot(ideal, control_pred_update)
+            plt.plot(
+                bot_pred_update,
+                label="From prediction (updated) (%.2f)" % bot_pred_update[-1],
+            )
+            have_pred_update = True
+        except:
+            have_pred_update = False
         plt.plot(ideal / ideal[0] * 100.0, label="Stock value(%s)" % self.ts)
         plt.xlabel("Days")
         plt.ylabel("Percentage growth")
@@ -825,7 +838,7 @@ class LSTM_Model:
             )
         )
         np.savez(
-            "../save_mat/bot_%d_%d_%d_%d_%s_%s%s.png"
+            "../save_mat/bot_%d_%d_%d_%d_%s_%s%s.npz"
             % (
                 self.depth,
                 int(self.naive),
@@ -836,8 +849,8 @@ class LSTM_Model:
                 suffix,
             ),
             ideal=bot_ideal,
-            pred=bot_pred,
-            pred_up=bot_pred_update,
+            pred=bot_pred if have_pred else None,
+            pred_up=bot_pred_update if have_pred_update else None,
         )
         plt.clf()
 
