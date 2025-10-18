@@ -34,7 +34,8 @@ for ticker in tickers:
             verbose=1,
         )
         model.full_workflow_and_plot(suffix=model_cls.__name__)
-        plt.clf()
+        model.plot_bot_decision(suffix=model_cls.__name__)
+        plt.close()
         # Store metrics
         results[(ticker, model_cls.__name__)] = {
             "RMS_error": model.RMS_error,
