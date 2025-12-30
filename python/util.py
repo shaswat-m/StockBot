@@ -708,14 +708,14 @@ class LSTM_Model:
             )
             plt.clf()
             np.savez(
-                "../save_mat/store_%d_%d_%d_%d_%s_%s.npz"
+                "../save_mat/store_%d_%d_%d_%d_%s_%s%s.npz"
                 % (
                     self.depth,
                     int(self.naive),
                     self.past_history,
                     self.forward_look,
                     self.ts,
-                    int(self.custom_loss),
+                    int(self.custom_loss), suffix
                 ),
                 y=self.yt[: self.values - 1],
                 pred=self.pred[1:],
@@ -1156,7 +1156,7 @@ class LSTM_ED_Model:
         else:
             self.RMS_error = self.history.history["mse"][-1]
 
-    def plot_test_values(self):
+    def plot_test_values(self, suffix=""):
         """
         Plot predicted values against actual values
         """
@@ -1196,14 +1196,14 @@ class LSTM_ED_Model:
             )
             plt.clf()
             np.savez(
-                "../save_mat/EDstore_%d_%d_%d_%d_%s_%s.png"
+                "../save_mat/EDstore_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
                     self.past_history,
                     self.forward_look,
                     self.ts,
-                    int(self.custom_loss),
+                    int(self.custom_loss), suffix
                 ),
                 y=self.yt[: self.values - 1, 0, 0],
                 pred=self.pred[1:, 0],
@@ -1238,14 +1238,14 @@ class LSTM_ED_Model:
         self.infer_values(self.xt, self.yt, self.ts)
         # self.arch_plot()
 
-    def full_workflow_and_plot(self, model=None):
+    def full_workflow_and_plot(self, model=None, suffix=None):
         """
         Workflow to carry out the entire process end-to-end
         :param model: Choose which model to use to predict inferred values
         :return:
         """
         self.full_workflow(model=model)
-        self.plot_test_values()
+        self.plot_test_values(suffix=suffix)
 
     def plot_bot_decision(self):
         """
@@ -1694,7 +1694,7 @@ class LSTM_Model_MS:
                     )
                 ) ** 0.5 / self.batch_size
 
-    def plot_test_values(self):
+    def plot_test_values(self, suffix=""):
         """
         Plot predicted values against actual values
         """
@@ -1736,14 +1736,14 @@ class LSTM_Model_MS:
             )
             plt.clf()
             np.savez(
-                "../save_mat/MSstore_%d_%d_%d_%d_%s_%s.png"
+                "../save_mat/MSstore_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
                     self.past_history,
                     self.forward_look,
                     self.ts,
-                    int(self.custom_loss),
+                    int(self.custom_loss), suffix
                 ),
                 y=self.yt[: self.values - 1, 0, 0],
                 pred=self.pred[1:, 0],
@@ -1785,14 +1785,14 @@ class LSTM_Model_MS:
             )
             plt.clf()
             np.savez(
-                "../save_mat/MSstore_%d_%d_%d_%d_%s_%s.png"
+                "../save_mat/MSstore_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
                     self.past_history,
                     self.forward_look,
                     self.ts,
-                    int(self.custom_loss),
+                    int(self.custom_loss), suffix
                 ),
                 y=self.yt[: self.values - 1],
                 pred=self.pred[1:],
@@ -1865,14 +1865,14 @@ class LSTM_Model_MS:
         self.get_tick_values()
         self.prepare_test()
 
-    def full_workflow_and_plot(self, model=None):
+    def full_workflow_and_plot(self, model=None, suffix = None):
         """
         Workflow to carry out the entire process end-to-end
         :param model: Choose which model to use to predict inferred values
         :return:
         """
         self.full_workflow(model=model)
-        self.plot_test_values()
+        self.plot_test_values(suffix=None)
 
     def plot_bot_decision(self):
         """
@@ -2399,7 +2399,7 @@ class LSTM_Model_MS_GT:
                     )
                 ) ** 0.5 / self.batch_size
 
-    def plot_test_values(self):
+    def plot_test_values(self, suffix = ""):
         """
         Plot predicted values against actual values
         """
@@ -2441,14 +2441,14 @@ class LSTM_Model_MS_GT:
             )
             plt.clf()
             np.savez(
-                "../save_mat/GTMSstore_%d_%d_%d_%d_%s_%s.png"
+                "../save_mat/GTMSstore_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
                     self.past_history,
                     self.forward_look,
                     self.ts,
-                    int(self.custom_loss),
+                    int(self.custom_loss), suffix
                 ),
                 y=self.yt[: self.values - 1, 0, 0],
                 pred=self.pred[1:, 0],
@@ -2491,14 +2491,14 @@ class LSTM_Model_MS_GT:
             )
             plt.clf()
             np.savez(
-                "../save_mat/GTMSstore_%d_%d_%d_%d_%s_%s.png"
+                "../save_mat/GTMSstore_%d_%d_%d_%d_%s_%s%s.png"
                 % (
                     self.depth,
                     int(self.naive),
                     self.past_history,
                     self.forward_look,
                     self.ts,
-                    int(self.custom_loss),
+                    int(self.custom_loss), suffix
                 ),
                 y=self.yt[: self.values - 1],
                 pred=self.pred[1:],
@@ -2571,14 +2571,14 @@ class LSTM_Model_MS_GT:
         self.get_tick_values()
         self.prepare_test()
 
-    def full_workflow_and_plot(self, model=None):
+    def full_workflow_and_plot(self, model=None, suffix=None):
         """
         Workflow to carry out the entire process end-to-end
         :param model: Choose which model to use to predict inferred values
         :return:
         """
         self.full_workflow(model=model)
-        self.plot_test_values()
+        self.plot_test_values(suffix=suffix)
 
     def plot_bot_decision(self):
         """
