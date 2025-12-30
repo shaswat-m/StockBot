@@ -31,6 +31,7 @@ for ticker in tickers:
             start=start,
             end=end,
             past_history=60,
+            forward_look=10,
             verbose=1,
         )
         model.full_workflow_and_plot(suffix=model_cls.__name__)
